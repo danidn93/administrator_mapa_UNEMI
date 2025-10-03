@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Menu, MapPin, DoorOpen, Building2, Pencil, ParkingSquare, MapPinned } from 'lucide-react';
+import { Menu, MapPin, DoorOpen, Building2, Pencil, ParkingSquare, MapPinned, Plus } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
-import MapComponent, { MapClickCoords } from '@/components/MapComponent';
+import MapComponent, { MapClickCoords, EntranceType, LandmarkType } from '@/components/MapComponent';
 import SearchPanel from '@/components/SearchPanel';
 import BuildingForm from '@/components/BuildingForm';
 import RoomForm from '@/components/RoomForm';
+import RoomEditModal from '@/components/RoomEditModal';
 
 type Building = {
   id: string;
@@ -18,17 +19,34 @@ type Building = {
   building_code?: string | null;
 };
 
-type SelectedLocation = MapClickCoords | Building | null;
+type Room = {
+  id: string;
+  floor_id: string;
+  room_type_id: string;
+  name: string | null;
+  room_number?: string | null;
+  description?: string | null;
+  capacity?: number | null;
+  equipment?: string[] | null;
+  keywords?: string[] | null;
+  directions?: string | null;
+  actividades?: string | null;
+  // opcionalmente created_at / updated_at si los pasas desde SearchPanel
+};
+
+type SelectedLocation = MapClickCoords | Building | Room | null;
+
 function isCoords(x: SelectedLocation): x is MapClickCoords {
   return !!x && typeof (x as any).latitude === 'number' && typeof (x as any).longitude === 'number' && !(x as any).id;
 }
 function isBuilding(x: SelectedLocation): x is Building {
-  return !!x && typeof (x as any).id === 'string';
+  return !!x && typeof (x as any).id === 'string' && (x as any).latitude !== undefined && (x as any).longitude !== undefined && (x as any).total_floors !== undefined;
+}
+function isRoom(x: SelectedLocation): x is Room {
+  return !!x && typeof (x as any).id === 'string' && (x as any).floor_id !== undefined && (x as any).room_type_id !== undefined && (x as any).total_floors === undefined;
 }
 
 type MapMode = "idle" | "footwayAB" | "entrance" | "parking" | "landmark";
-type EntranceType = "pedestrian" | "vehicular" | "both";
-type LandmarkType = "plazoleta" | "bar" | "corredor" | "otro";
 
 const Index = () => {
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation>(null);
@@ -40,20 +58,42 @@ const Index = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [clickedCoords, setClickedCoords] = useState<MapClickCoords | null>(null);
 
+  // edición de room
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [showRoomEditModal, setShowRoomEditModal] = useState(false);
+
   const selectedBuildingId = useMemo(() => (isBuilding(selectedLocation) ? selectedLocation.id : null), [selectedLocation]);
 
   // controles del mapa
   const [mapMode, setMapMode] = useState<MapMode>("idle");
   const [entranceType, setEntranceType] = useState<EntranceType>("pedestrian");
-  const [landmarkType] = useState<LandmarkType>("plazoleta"); // si quieres, agrega botones para cambiar tipo
+  const [landmarkType] = useState<LandmarkType>("plazoleta");
 
   const handleLocationSelect = (location: any) => {
+    // si viene un room desde SearchPanel => abre modal de edición
+    if (isRoom(location)) {
+      setEditingRoom(location);
+      setShowRoomEditModal(true);
+      if (window.innerWidth < 768) setShowSidebar(false);
+      return;
+    }
+
+    // comportamiento previo para edificios/coords
     setSelectedLocation(location);
     if (window.innerWidth < 768) setShowSidebar(false);
   };
 
   const handleBuildingAdded = () => setRefreshTrigger(prev => prev + 1);
   const handleRoomAdded = () => setRefreshTrigger(prev => prev + 1);
+  const handleRoomUpdated = () => {
+    // refresca lo que necesites (lista del SearchPanel si depende de supabase)…
+    setRefreshTrigger(prev => prev + 1);
+  };
+
+  // toggle exclusivo para un solo modo activo
+  const toggleMode = (next: MapMode) => {
+    setMapMode((curr) => (curr === next ? "idle" : next));
+  };
 
   return (
     <div className="relative h-screen w-full bg-background overflow-hidden">
@@ -65,36 +105,87 @@ const Index = () => {
               <MapPin className="h-5 w-5 text-accent-foreground" />
             </div>
             <div>
-              <h1 className="font-bold text-lg">UNEMI Campus Navigator</h1>
+              <h1 className="font-bold text-lg">UNEMI Campus</h1>
               <p className="text-xs opacity-80">Universidad Estatal de Milagro</p>
             </div>
           </div>
 
           {/* Acciones rápidas */}
           <div className="hidden md:flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={() => { setMapMode("footwayAB"); }} title="Dibujar calle peatonal (A→B)">
+            <Button
+              variant={mapMode === "footwayAB" ? "default" : "secondary"}
+              size="sm"
+              onClick={() => { toggleMode("footwayAB"); }}
+              title="Dibujar calle peatonal (A→B)"
+              aria-pressed={mapMode === "footwayAB"}
+            >
               <Pencil className="h-4 w-4 mr-2" /> Dibujar calle
             </Button>
 
-            <Button variant="secondary" size="sm" onClick={() => { setEntranceType("pedestrian"); setMapMode("entrance"); }} title="Marcar puerta peatonal">
+            <Button
+              variant={mapMode === "entrance" && entranceType === "pedestrian" ? "default" : "secondary"}
+              size="sm"
+              onClick={() => { setEntranceType("pedestrian"); toggleMode("entrance"); }}
+              title="Marcar puerta peatonal"
+              aria-pressed={mapMode === "entrance" && entranceType === "pedestrian"}
+            >
               <DoorOpen className="h-4 w-4 mr-2" /> Puerta peatonal
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => { setEntranceType("vehicular"); setMapMode("entrance"); }} title="Marcar puerta vehicular">
+            <Button
+              variant={mapMode === "entrance" && entranceType === "vehicular" ? "default" : "secondary"}
+              size="sm"
+              onClick={() => { setEntranceType("vehicular"); toggleMode("entrance"); }}
+              title="Marcar puerta vehicular"
+              aria-pressed={mapMode === "entrance" && entranceType === "vehicular"}
+            >
               <DoorOpen className="h-4 w-4 mr-2" /> Puerta vehicular
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => { setEntranceType("both"); setMapMode("entrance"); }} title="Marcar puerta (ambas)">
+            <Button
+              variant={mapMode === "entrance" && entranceType === "both" ? "default" : "secondary"}
+              size="sm"
+              onClick={() => { setEntranceType("both"); toggleMode("entrance"); }}
+              title="Marcar puerta (ambas)"
+              aria-pressed={mapMode === "entrance" && entranceType === "both"}
+            >
               <DoorOpen className="h-4 w-4 mr-2" /> Puerta (ambas)
             </Button>
 
-            <Button variant="secondary" size="sm" onClick={() => { setMapMode("parking"); }} title="Marcar parqueadero">
+            <Button
+              variant={mapMode === "parking" ? "default" : "secondary"}
+              size="sm"
+              onClick={() => { toggleMode("parking"); }}
+              title="Marcar parqueadero"
+              aria-pressed={mapMode === "parking"}
+            >
               <ParkingSquare className="h-4 w-4 mr-2" /> Parqueadero
             </Button>
 
-            <Button variant="secondary" size="sm" onClick={() => { setMapMode("landmark"); }} title="Crear punto de referencia">
+            <Button
+              variant={mapMode === "landmark" ? "default" : "secondary"}
+              size="sm"
+              onClick={() => { toggleMode("landmark"); }}
+              title="Crear punto de referencia"
+              aria-pressed={mapMode === "landmark"}
+            >
               <MapPinned className="h-4 w-4 mr-2" /> Referencia
             </Button>
 
-            <Button variant="secondary" size="sm" disabled={!selectedBuildingId} onClick={() => setShowRoomForm(true)}>
+            {/* Agregar edificio manual */}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => { setClickedCoords(null); setShowBuildingForm(true); }}
+              title="Agregar edificio"
+            >
+              <Plus className="h-4 w-4 mr-2" /> Agregar edificio
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!selectedBuildingId}
+              onClick={() => setShowRoomForm(true)}
+            >
               <Building2 className="h-4 w-4 mr-2" /> Agregar Habitación
             </Button>
           </div>
@@ -103,10 +194,17 @@ const Index = () => {
 
       {/* Main */}
       <div className="flex h-full pt-16">
-        {/* Sidebar */}
+        {/* Sidebar SCROLLEABLE */}
         <aside className={`absolute md:relative z-10 transition-transform duration-300 ${showSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} ${showSidebar ? 'w-full md:w-96' : 'w-0 md:w-96'} h-full`}>
-          <div className="h-full p-4 bg-background/95 backdrop-blur-sm border-r border-border/50 overflow-hidden">
-            <SearchPanel onLocationSelect={handleLocationSelect} selectedLocation={selectedLocation} />
+          <div className="h-full flex flex-col bg-background/95 backdrop-blur-sm border-r border-border/50">
+            <div className="p-4 shrink-0 border-b border-border/50">
+              {/* puedes poner filtros/buscador extra aquí si quieres */}
+              <span className="text-sm text-muted-foreground">Buscar / Navegar</span>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-4">
+              {/* Contenido scrolleable */}
+              <SearchPanel onLocationSelect={handleLocationSelect} selectedLocation={selectedLocation} />
+            </div>
           </div>
         </aside>
 
@@ -116,7 +214,6 @@ const Index = () => {
             <MapComponent
               key={refreshTrigger}
               onLocationSelect={handleLocationSelect}
-              onAddBuilding={(coords) => { setClickedCoords(coords); setShowBuildingForm(true); }}
               isAdmin={true}
               externalMode={mapMode}
               entranceType={entranceType}
@@ -129,8 +226,6 @@ const Index = () => {
           {showSidebar && (
             <div className="absolute inset-0 bg-black/20 md:hidden z-[5]" onClick={() => setShowSidebar(false)} />
           )}
-
-          {/* Botones móviles (opcionales) */}
         </main>
       </div>
 
@@ -175,14 +270,34 @@ const Index = () => {
       {/* Modal: Agregar Edificio */}
       {showBuildingForm && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-          <BuildingForm onClose={() => setShowBuildingForm(false)} onBuildingAdded={handleBuildingAdded} initialCoords={clickedCoords} />
+          <BuildingForm
+            onClose={() => setShowBuildingForm(false)}
+            onBuildingAdded={handleBuildingAdded}
+            initialCoords={clickedCoords}
+          />
         </div>
       )}
 
       {/* Modal: Agregar Habitación */}
       {showRoomForm && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-          <RoomForm onClose={() => setShowRoomForm(false)} onRoomAdded={handleRoomAdded} initialBuildingId={selectedBuildingId} initialFloorNumber={undefined} />
+          <RoomForm
+            onClose={() => setShowRoomForm(false)}
+            onRoomAdded={handleRoomAdded}
+            initialBuildingId={selectedBuildingId}
+            initialFloorNumber={undefined}
+          />
+        </div>
+      )}
+
+      {/* Modal: Editar Habitación */}
+      {showRoomEditModal && editingRoom && (
+        <div className="fixed inset-0 bg-black/50 z-[110] flex items-center justify-center p-4">
+          <RoomEditModal
+            room={editingRoom}
+            onClose={() => { setShowRoomEditModal(false); setEditingRoom(null); }}
+            onSaved={() => { setShowRoomEditModal(false); setEditingRoom(null); handleRoomUpdated(); }}
+          />
         </div>
       )}
     </div>

@@ -1,4 +1,3 @@
-// src/components/MapComponent.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -27,7 +26,7 @@ type Building = {
   longitude: number;
   total_floors: number;
   building_code: string | null;
-  state: BuildingState; // NEW
+  state: BuildingState;
 };
 
 type FootwayState = "ABIERTO" | "CERRADO";
@@ -70,7 +69,6 @@ type MapMode = "idle" | "footwayAB" | "entrance" | "parking" | "landmark";
 
 export interface MapComponentProps {
   onLocationSelect?: (location: any) => void;
-  onAddBuilding?: (coords: MapClickCoords) => void;
   isAdmin?: boolean;
 
   /** control externo (Index) */
@@ -85,7 +83,6 @@ const SNAP_PX = 10;
 
 const MapComponent: React.FC<MapComponentProps> = ({
   onLocationSelect,
-  onAddBuilding,
   isAdmin = false,
   externalMode = "idle",
   entranceType = "pedestrian",
@@ -298,7 +295,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       const icon = buildingStyle(b);
       const marker = L.marker([b.latitude, b.longitude], { icon, title: b.name }).addTo(mapRef.current!);
       marker.on("click", (ev) => {
-        onLocationSelect?.(b); // mantiene tu selección para el panel lateral
+        onLocationSelect?.(b);
         ev.originalEvent.stopPropagation();
         openCtx("building", b.id, L.latLng(b.latitude, b.longitude), b.state);
       });
@@ -462,8 +459,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
     if (pending) return;
     if (ctx) { setCtx(null); return; }
 
+    // EN IDLE: no hacer nada
     if (activeMode === "idle") {
-      onAddBuilding?.({ latitude: ll.lat, longitude: ll.lng });
       return;
     }
 
