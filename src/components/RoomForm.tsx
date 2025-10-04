@@ -60,8 +60,11 @@ export default function RoomForm({
   const [capacity, setCapacity] = useState<number | "">("");
   const [description, setDescription] = useState("");
   const [directions, setDirections] = useState("");
+
+  // Campos coma-separados que guardaremos como text[]
   const [equipment, setEquipment] = useState("");
   const [keywords, setKeywords] = useState("");
+  const [actividades, setActividades] = useState(""); // ⬅️ NUEVO
 
   const [newFloorNumber, setNewFloorNumber] = useState<number | "">(
     initialFloorNumber ?? ""
@@ -73,6 +76,13 @@ export default function RoomForm({
     () => buildings.find(b => b.id === buildingId) || null,
     [buildings, buildingId]
   );
+
+  // ========= helpers locales para arrays =========
+  const toArray = (s: string) =>
+    s
+      .split(",")
+      .map(x => x.trim())
+      .filter(Boolean);
 
   // ========= Load buildings & room types =========
   useEffect(() => {
@@ -97,11 +107,9 @@ export default function RoomForm({
 
         if (initialBuildingId) {
           setBuildingId(initialBuildingId);
-          console.log("[RoomForm] initialBuildingId=", initialBuildingId);
           fetchFloors(initialBuildingId); // carga inmediata
         } else if (!buildingId && b.length > 0) {
           setBuildingId(b[0].id);
-          console.log("[RoomForm] defaultBuildingId=", b[0].id);
           fetchFloors(b[0].id); // carga inmediata
         }
       } catch (err: any) {
@@ -117,7 +125,6 @@ export default function RoomForm({
   const fetchFloors = async (bId: string) => {
     try {
       if (!bId) return;
-      console.log("[RoomForm] fetchFloors buildingId=", bId);
       const { data, error } = await supabase
         .from("floors")
         .select("id, building_id, floor_number, floor_name")
@@ -126,7 +133,6 @@ export default function RoomForm({
 
       if (error) throw error;
 
-      console.log("[RoomForm] floors fetched:", data?.length ?? 0);
       setFloors(data || []);
 
       if (!data || data.length === 0) {
@@ -174,7 +180,7 @@ export default function RoomForm({
       if (exErr) throw exErr;
 
       const existingSet = new Set((existing || []).map(f => f.floor_number));
-      const toInsert = [];
+      const toInsert: any[] = [];
       for (let i = 1; i <= n; i++) {
         if (!existingSet.has(i)) {
           toInsert.push({
@@ -278,12 +284,9 @@ export default function RoomForm({
   };
 
   // ========= Save room =========
-  const equipmentArray = equipment
-    ? equipment.split(",").map(s => s.trim()).filter(Boolean)
-    : [];
-  const keywordsArray = keywords
-    ? keywords.split(",").map(s => s.trim()).filter(Boolean)
-    : [];
+  const equipmentArray = equipment ? toArray(equipment) : [];
+  const keywordsArray = keywords ? toArray(keywords) : [];
+  const actividadesArray = actividades ? toArray(actividades) : []; // ⬅️ NUEVO
 
   const handleSaveRoom = async () => {
     if (!buildingId) return toast.error("Selecciona un edificio");
@@ -303,6 +306,7 @@ export default function RoomForm({
         equipment: equipmentArray.length ? equipmentArray : null,
         keywords: keywordsArray.length ? keywordsArray : null,
         directions: directions || null,
+        actividades: actividadesArray.length ? actividadesArray : null, // ⬅️ NUEVO
       });
       if (error) throw error;
 
@@ -343,13 +347,12 @@ export default function RoomForm({
               onValueChange={(v) => {
                 setBuildingId(v);
                 setFloorId("");
-                fetchFloors(v); // 👈 carga inmediata
+                fetchFloors(v); // carga inmediata
               }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Selecciona un edificio" />
               </SelectTrigger>
-              {/* 👇 IMPORTANTE: z alto para quedar sobre el overlay */}
               <SelectContent position="popper" className="z-[200]">
                 {buildings.map(b => (
                   <SelectItem key={b.id} value={b.id}>
@@ -372,7 +375,6 @@ export default function RoomForm({
                 <SelectTrigger>
                   <SelectValue placeholder={buildingId ? "Selecciona un piso" : "Selecciona un edificio primero"} />
                 </SelectTrigger>
-                {/* 👇 z alto para no quedar por debajo del overlay */}
                 <SelectContent position="popper" className="z-[200]">
                   {floors.map(f => (
                     <SelectItem key={f.id} value={f.id}>
@@ -454,7 +456,6 @@ export default function RoomForm({
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona un tipo" />
                 </SelectTrigger>
-                {/* 👇 también con z alto */}
                 <SelectContent position="popper" className="z-[200]">
                   {roomTypes.map(rt => (
                     <SelectItem key={rt.id} value={rt.id}>{rt.name}</SelectItem>
@@ -512,6 +513,15 @@ export default function RoomForm({
               value={keywords}
               onChange={(e) => setKeywords(e.target.value)}
               placeholder="química, laboratorio, seguridad"
+            />
+          </div>
+
+          <div className="grid gap-1.5 mt-4">
+            <Label>Actividades (coma-separado, opcional)</Label>
+            <Input
+              value={actividades}
+              onChange={(e) => setActividades(e.target.value)}
+              placeholder="Procesos institucionales, Levantamiento de procesos, Normativas Institucionales, Acreditación"
             />
           </div>
 

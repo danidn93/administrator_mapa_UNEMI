@@ -1,11 +1,3 @@
-<<<<<<< HEAD
-// src/pages/index.tsx
-import PublicNavigator from "@/components/PublicNavigator";
-
-export default function Index() {
-  return <PublicNavigator />;
-}
-=======
 import { useMemo, useState } from 'react';
 import { Menu, MapPin, DoorOpen, Building2, Pencil, ParkingSquare, MapPinned, Plus } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -38,8 +30,7 @@ type Room = {
   equipment?: string[] | null;
   keywords?: string[] | null;
   directions?: string | null;
-  actividades?: string | null;
-  // opcionalmente created_at / updated_at si los pasas desde SearchPanel
+  actividades?: string[] | null;
 };
 
 type SelectedLocation = MapClickCoords | Building | Room | null;
@@ -54,7 +45,7 @@ function isRoom(x: SelectedLocation): x is Room {
   return !!x && typeof (x as any).id === 'string' && (x as any).floor_id !== undefined && (x as any).room_type_id !== undefined && (x as any).total_floors === undefined;
 }
 
-type MapMode = "idle" | "footwayAB" | "entrance" | "parking" | "landmark";
+type MapMode = "idle" | "footwayAB" | "entrance" | "parking" | "landmark" | "addBuilding";
 
 const Index = () => {
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation>(null);
@@ -66,19 +57,29 @@ const Index = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [clickedCoords, setClickedCoords] = useState<MapClickCoords | null>(null);
 
-  // edición de room
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [showRoomEditModal, setShowRoomEditModal] = useState(false);
 
   const selectedBuildingId = useMemo(() => (isBuilding(selectedLocation) ? selectedLocation.id : null), [selectedLocation]);
 
-  // controles del mapa
   const [mapMode, setMapMode] = useState<MapMode>("idle");
   const [entranceType, setEntranceType] = useState<EntranceType>("pedestrian");
   const [landmarkType] = useState<LandmarkType>("plazoleta");
 
+  const toggleMode = (next: MapMode) => {
+    setMapMode((curr) => (curr === next ? "idle" : next));
+  };
+
   const handleLocationSelect = (location: any) => {
-    // si viene un room desde SearchPanel => abre modal de edición
+    // A) Si recibo coordenadas (desde addBuilding), abrir el form
+    if (isCoords(location)) {
+      setClickedCoords(location);
+      setShowBuildingForm(true);
+      if (window.innerWidth < 768) setShowSidebar(false);
+      return;
+    }
+
+    // B) Si viene un Room, abrir modal edición
     if (isRoom(location)) {
       setEditingRoom(location);
       setShowRoomEditModal(true);
@@ -86,22 +87,14 @@ const Index = () => {
       return;
     }
 
-    // comportamiento previo para edificios/coords
+    // C) Selección normal (edificio)
     setSelectedLocation(location);
     if (window.innerWidth < 768) setShowSidebar(false);
   };
 
   const handleBuildingAdded = () => setRefreshTrigger(prev => prev + 1);
   const handleRoomAdded = () => setRefreshTrigger(prev => prev + 1);
-  const handleRoomUpdated = () => {
-    // refresca lo que necesites (lista del SearchPanel si depende de supabase)…
-    setRefreshTrigger(prev => prev + 1);
-  };
-
-  // toggle exclusivo para un solo modo activo
-  const toggleMode = (next: MapMode) => {
-    setMapMode((curr) => (curr === next ? "idle" : next));
-  };
+  const handleRoomUpdated = () => setRefreshTrigger(prev => prev + 1);
 
   return (
     <div className="relative h-screen w-full bg-background overflow-hidden">
@@ -178,12 +171,13 @@ const Index = () => {
               <MapPinned className="h-4 w-4 mr-2" /> Referencia
             </Button>
 
-            {/* Agregar edificio manual */}
+            {/* Agregar edificio → esperar clic en mapa */}
             <Button
-              variant="secondary"
+              variant={mapMode === "addBuilding" ? "default" : "secondary"}
               size="sm"
-              onClick={() => { setClickedCoords(null); setShowBuildingForm(true); }}
-              title="Agregar edificio"
+              onClick={() => { setClickedCoords(null); toggleMode("addBuilding"); }}
+              title="Agregar edificio (clic en el mapa)"
+              aria-pressed={mapMode === "addBuilding"}
             >
               <Plus className="h-4 w-4 mr-2" /> Agregar edificio
             </Button>
@@ -202,15 +196,13 @@ const Index = () => {
 
       {/* Main */}
       <div className="flex h-full pt-16">
-        {/* Sidebar SCROLLEABLE */}
+        {/* Sidebar */}
         <aside className={`absolute md:relative z-10 transition-transform duration-300 ${showSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} ${showSidebar ? 'w-full md:w-96' : 'w-0 md:w-96'} h-full`}>
           <div className="h-full flex flex-col bg-background/95 backdrop-blur-sm border-r border-border/50">
             <div className="p-4 shrink-0 border-b border-border/50">
-              {/* puedes poner filtros/buscador extra aquí si quieres */}
               <span className="text-sm text-muted-foreground">Buscar / Navegar</span>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-4">
-              {/* Contenido scrolleable */}
               <SearchPanel onLocationSelect={handleLocationSelect} selectedLocation={selectedLocation} />
             </div>
           </div>
@@ -230,7 +222,6 @@ const Index = () => {
             />
           </div>
 
-          {/* Overlay cerrar panel en móvil */}
           {showSidebar && (
             <div className="absolute inset-0 bg-black/20 md:hidden z-[5]" onClick={() => setShowSidebar(false)} />
           )}
@@ -275,7 +266,7 @@ const Index = () => {
         </Card>
       )}
 
-      {/* Modal: Agregar Edificio */}
+      {/* Modal: Agregar Edificio (se abre tras clic en mapa) */}
       {showBuildingForm && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
           <BuildingForm
@@ -313,4 +304,3 @@ const Index = () => {
 };
 
 export default Index;
->>>>>>> a2763d4 (Editar Room y scroll en barra)

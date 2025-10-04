@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
@@ -65,13 +65,11 @@ type Landmark = {
 };
 
 export type MapClickCoords = { latitude: number; longitude: number };
-type MapMode = "idle" | "footwayAB" | "entrance" | "parking" | "landmark";
+type MapMode = "idle" | "footwayAB" | "entrance" | "parking" | "landmark" | "addBuilding";
 
 export interface MapComponentProps {
   onLocationSelect?: (location: any) => void;
   isAdmin?: boolean;
-
-  /** control externo (Index) */
   externalMode?: MapMode;
   entranceType?: EntranceType;
   landmarkType?: LandmarkType;
@@ -95,35 +93,29 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const [buildings, setBuildings] = useState<Building[]>([]);
   const markersRef = useRef<L.Marker[]>([]);
 
-  // Capa de edición / render
   const drawnLayerGroupRef = useRef<L.FeatureGroup | null>(null);
   const drawControlRef = useRef<any>(null);
 
-  // Datos
   const [footways, setFootways] = useState<Footway[]>([]);
   const [entrances, setEntrances] = useState<Entrance[]>([]);
   const [parkings, setParkings] = useState<Parking[]>([]);
   const [landmarks, setLandmarks] = useState<Landmark[]>([]);
 
-  // Modo (desde Index)
   const modeRef = useRef<MapMode>("idle");
   const [mode, setMode] = useState<MapMode>("idle");
   const entranceTypeRef = useRef<EntranceType>(entranceType);
   const landmarkTypeRef = useRef<LandmarkType>(landmarkType);
 
-  // A→B para footway
   const pointAMarkerRef = useRef<L.Marker | null>(null);
   const pointBMarkerRef = useRef<L.Marker | null>(null);
   const quickARef = useRef<L.LatLng | null>(null);
   const quickBRef = useRef<L.LatLng | null>(null);
 
-  // === panel flotante para crear POIs (sin prompts) ===
   type PendingForm =
     | { kind: "entrance" | "parking" | "landmark"; latlng: L.LatLng; name: string; buildingId: string | null }
     | null;
   const [pending, setPending] = useState<PendingForm>(null);
 
-  // === contexto de acciones (clic sobre calle/edificio/entrada) ===
   type CtxMenu =
     | { kind: "footway"; id: string; latlng: L.LatLng; screen: { x: number; y: number }; state: FootwayState }
     | { kind: "building"; id: string; latlng: L.LatLng; screen: { x: number; y: number }; state: BuildingState }
@@ -131,7 +123,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
     | null;
   const [ctx, setCtx] = useState<CtxMenu>(null);
 
-  // ======= ENTRANCE drag handling =======
   const entranceMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const [dragEditing, setDragEditing] = useState<{ id: string; original: L.LatLng } | null>(null);
 
@@ -237,7 +228,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
       if (drawControlRef.current) mapRef.current.removeControl(drawControlRef.current);
       if (drawnLayerGroupRef.current) mapRef.current.removeLayer(drawnLayerGroupRef.current);
       if (verticesLayerRef.current) mapRef.current.removeLayer(verticesLayerRef.current);
-      // limpiar entrance markers
       for (const mk of entranceMarkersRef.current.values()) mapRef.current.removeLayer(mk);
       entranceMarkersRef.current.clear();
       mapRef.current.remove();
@@ -326,7 +316,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
     });
   };
 
-  // Vértices numerados (amarillo)
   const verticesLayerRef = useRef<L.LayerGroup | null>(null);
   const renderVerticesLayer = () => {
     if (!mapRef.current) return;
@@ -387,7 +376,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const renderEntrances = () => {
     if (!mapRef.current) return;
 
-    // limpiar markers previos
     for (const mk of entranceMarkersRef.current.values()) mapRef.current!.removeLayer(mk);
     entranceMarkersRef.current.clear();
 
@@ -455,14 +443,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
     ll = snapLatLngToVertex(ll);
     const activeMode = modeRef.current;
 
-    // si hay panel pendiente o menú abierto, ciérralos y no hagas nada más
     if (pending) return;
     if (ctx) { setCtx(null); return; }
-
-    // EN IDLE: no hacer nada
-    if (activeMode === "idle") {
-      return;
-    }
+    if (activeMode === "idle") return;
 
     if (activeMode === "footwayAB") {
       if (!quickARef.current) {
@@ -496,6 +479,13 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
     if (activeMode === "landmark") {
       setPending({ kind: "landmark", latlng: ll, name: "", buildingId: nearestBuildingId(ll) });
+      return;
+    }
+
+    // Agregar edificio -> devolver coords y resetear modo
+    if (activeMode === "addBuilding") {
+      onLocationSelect?.({ latitude: ll.lat, longitude: ll.lng } as MapClickCoords);
+      onModeReset?.();
       return;
     }
   };
@@ -532,7 +522,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
     quickBRef.current = null;
   };
 
-  // Barra de dibujo para edición avanzada
   const enableDrawControls = async () => {
     if (!mapRef.current) return;
     try { if (!(L as any).Draw) await import("leaflet-draw"); }
@@ -591,7 +580,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
         const dels: any[] = []; layers.eachLayer((l: any) => dels.push(l));
         for (const layer of dels) {
           const poly = layer as L.Polyline & { __footwayId?: string };
-          if (!poly.__footwayId) continue;
           const { error } = await supabase.from("footways").delete().eq("id", poly.__footwayId);
           if (error) throw error;
         }
@@ -601,7 +589,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     });
   };
 
-  // ======= UI auxiliar: lista de edificios ordenados por cercanía =======
+  // ======= UI auxiliar =======
   const sortedBuildingsFor = (ll: L.LatLng) =>
     [...buildings]
       .map((b) => ({ b, d: ll.distanceTo([b.latitude, b.longitude]) }))
@@ -650,10 +638,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
 
     setPending(null);
-    onModeReset?.(); // volver a idle tras crear
+    onModeReset?.();
   };
 
-  // ======= Context menu helpers =======
   const openCtx = (kind: CtxMenu["kind"], id: string, ll: L.LatLng, state?: any) => {
     if (!mapRef.current) return;
     const p = mapRef.current.latLngToContainerPoint(ll);
@@ -742,13 +729,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
     await loadEntrances(); renderEntrances();
   };
 
-  // ======= Render =======
   return (
     <div className="relative w-full h-full">
       <div ref={mapEl} className="absolute inset-0 rounded-lg shadow-lg z-0" />
       <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-transparent to-background/5 rounded-lg z-[1]" />
 
-      {/* Banner modo (solo info, sin controles) */}
       {mode !== "idle" && !pending && (
         <div className="absolute top-3 right-3 z-[1200] pointer-events-none">
           <div className="px-3 py-1 rounded-full bg-amber-500 text-amber-950 text-sm font-semibold shadow">
@@ -756,11 +741,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
             {mode === "entrance" && "Nueva puerta • Click mapa"}
             {mode === "parking" && "Nuevo parqueadero • Click mapa"}
             {mode === "landmark" && "Nueva referencia • Click mapa"}
+            {mode === "addBuilding" && "Agregar edificio • Click mapa"}
           </div>
         </div>
       )}
 
-      {/* Panel flotante para crear POIs (sin prompts) */}
       {pending && (
         <div className="absolute top-4 left-4 z-[1300] w-[min(92vw,380px)] pointer-events-auto">
           <div className="bg-card/95 backdrop-blur rounded-xl border shadow-xl p-3 space-y-3">
@@ -822,7 +807,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
         </div>
       )}
 
-      {/* Context menu (acciones sobre un elemento) */}
       {ctx && (
         <div
           className="absolute z-[1400] pointer-events-auto"
@@ -832,16 +816,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
             {ctx.kind === "footway" && (
               <>
                 <div className="px-1 py-0.5 text-xs text-muted-foreground">Calle</div>
-                <button
-                  className="w-full text-left px-2 py-1 rounded hover:bg-accent"
-                  onClick={() => toggleFootwayState(ctx.id)}
-                >
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-accent" onClick={() => toggleFootwayState(ctx.id)}>
                   {ctx.state === "ABIERTO" ? "Cerrar" : "Abrir"}
                 </button>
-                <button
-                  className="w-full text-left px-2 py-1 rounded hover:bg-accent text-red-600"
-                  onClick={() => deleteFootway(ctx.id)}
-                >
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-accent text-red-600" onClick={() => deleteFootway(ctx.id)}>
                   Eliminar
                 </button>
               </>
@@ -850,16 +828,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
             {ctx.kind === "building" && (
               <>
                 <div className="px-1 py-0.5 text-xs text-muted-foreground">Edificio</div>
-                <button
-                  className="w-full text-left px-2 py-1 rounded hover:bg-accent"
-                  onClick={() => toggleBuildingState(ctx.id)}
-                >
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-accent" onClick={() => toggleBuildingState(ctx.id)}>
                   Cambiar a {ctx.state === "HABILITADO" ? "REPARACIÓN" : "HABILITADO"}
                 </button>
-                <button
-                  className="w-full text-left px-2 py-1 rounded hover:bg-accent text-red-600"
-                  onClick={() => deleteBuilding(ctx.id)}
-                >
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-accent text-red-600" onClick={() => deleteBuilding(ctx.id)}>
                   Eliminar
                 </button>
               </>
@@ -869,46 +841,29 @@ const MapComponent: React.FC<MapComponentProps> = ({
               <>
                 <div className="px-1 py-0.5 text-xs text-muted-foreground">Entrada</div>
                 {!dragEditing ? (
-                  <button
-                    className="w-full text-left px-2 py-1 rounded hover:bg-accent"
-                    onClick={() => startMoveEntrance(ctx.id)}
-                  >
+                  <button className="w-full text-left px-2 py-1 rounded hover:bg-accent" onClick={() => startMoveEntrance(ctx.id)}>
                     Mover
                   </button>
                 ) : dragEditing.id === ctx.id ? (
                   <>
-                    <button
-                      className="w-full text-left px-2 py-1 rounded hover:bg-accent"
-                      onClick={saveMoveEntrance}
-                    >
+                    <button className="w-full text-left px-2 py-1 rounded hover:bg-accent" onClick={saveMoveEntrance}>
                       Guardar posición
                     </button>
-                    <button
-                      className="w-full text-left px-2 py-1 rounded hover:bg-accent"
-                      onClick={cancelMoveEntrance}
-                    >
+                    <button className="w-full text-left px-2 py-1 rounded hover:bg-accent" onClick={cancelMoveEntrance}>
                       Cancelar movimiento
                     </button>
                   </>
                 ) : (
-                  <div className="px-2 py-1 text-xs text-muted-foreground">
-                    Editando otra entrada…
-                  </div>
+                  <div className="px-2 py-1 text-xs text-muted-foreground">Editando otra entrada…</div>
                 )}
-                <button
-                  className="w-full text-left px-2 py-1 rounded hover:bg-accent text-red-600"
-                  onClick={() => deleteEntrance(ctx.id)}
-                >
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-accent text-red-600" onClick={() => deleteEntrance(ctx.id)}>
                   Eliminar
                 </button>
               </>
             )}
 
             <div className="pt-1 border-t mt-1">
-              <button
-                className="w-full text-left px-2 py-1 rounded hover:bg-accent"
-                onClick={() => setCtx(null)}
-              >
+              <button className="w-full text-left px-2 py-1 rounded hover:bg-accent" onClick={() => setCtx(null)}>
                 Cerrar
               </button>
             </div>

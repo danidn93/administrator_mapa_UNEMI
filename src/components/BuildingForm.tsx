@@ -1,4 +1,3 @@
-// src/components/BuildingForm.tsx
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,10 +11,9 @@ export type LatLng = { latitude: number; longitude: number };
 export interface BuildingFormProps {
   onClose: () => void;
   onBuildingAdded: () => void;
-  initialCoords?: LatLng | null; // coords que te pasa el MapComponent al hacer clic
+  initialCoords?: LatLng | null;
 }
 
-// Enum esperado en BD: 'HABILITADO' | 'REPARACIÓN'
 type BuildingState = "HABILITADO" | "REPARACIÓN";
 
 export default function BuildingForm({
@@ -32,7 +30,6 @@ export default function BuildingForm({
   const [state, setState] = useState<BuildingState>("HABILITADO");
   const [saving, setSaving] = useState(false);
 
-  // Si cambian coords iniciales (abriste form desde otro clic)
   useEffect(() => {
     if (initialCoords) {
       setLat(initialCoords.latitude);
@@ -41,18 +38,9 @@ export default function BuildingForm({
   }, [initialCoords]);
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      toast.error("Ingresa el nombre del edificio");
-      return;
-    }
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      toast.error("Faltan coordenadas válidas (haz clic en el mapa para prellenarlas)");
-      return;
-    }
-    if (totalFloors < 1) {
-      toast.error("El número de pisos debe ser al menos 1");
-      return;
-    }
+    if (!name.trim()) return toast.error("Ingresa el nombre del edificio");
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return toast.error("Faltan coordenadas válidas");
+    if (totalFloors < 1) return toast.error("El número de pisos debe ser al menos 1");
 
     try {
       setSaving(true);
@@ -63,7 +51,7 @@ export default function BuildingForm({
         total_floors: totalFloors,
         latitude: lat,
         longitude: lng,
-        state, // <<<<<<<< nuevo campo enum
+        state,
       });
 
       if (error) throw error;
@@ -125,21 +113,11 @@ export default function BuildingForm({
         <div className="grid grid-cols-2 gap-3">
           <div className="grid gap-1.5">
             <Label>Latitud</Label>
-            <Input
-              type="number"
-              step="0.0000001"
-              value={lat}
-              onChange={(e) => setLat(parseFloat(e.target.value))}
-            />
+            <Input type="number" step="0.0000001" value={lat} onChange={(e) => setLat(parseFloat(e.target.value))} />
           </div>
           <div className="grid gap-1.5">
             <Label>Longitud</Label>
-            <Input
-              type="number"
-              step="0.0000001"
-              value={lng}
-              onChange={(e) => setLng(parseFloat(e.target.value))}
-            />
+            <Input type="number" step="0.0000001" value={lng} onChange={(e) => setLng(parseFloat(e.target.value))} />
           </div>
         </div>
       </div>

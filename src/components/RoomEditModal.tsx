@@ -14,7 +14,7 @@ type Room = {
   equipment?: string[] | null;
   keywords?: string[] | null;
   directions?: string | null;
-  actividades?: string | null;
+  actividades?: string[] | null; // <-- ARRAY en DB
 };
 
 interface Props {
@@ -38,7 +38,10 @@ export default function RoomEditModal({ room, onClose, onSaved }: Props) {
   const [equipmentTxt, setEquipmentTxt] = useState<string>(toCSV(room.equipment));
   const [keywordsTxt, setKeywordsTxt] = useState<string>(toCSV(room.keywords));
   const [directions, setDirections] = useState<string>(room.directions ?? "");
-  const [actividades, setActividades] = useState<string>(room.actividades ?? "");
+
+  // 🔧 ahora usamos un string para el input, pero guardamos como string[]
+  const [actividadesTxt, setActividadesTxt] = useState<string>(toCSV(room.actividades));
+
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -49,7 +52,7 @@ export default function RoomEditModal({ room, onClose, onSaved }: Props) {
     setEquipmentTxt(toCSV(room.equipment));
     setKeywordsTxt(toCSV(room.keywords));
     setDirections(room.directions ?? "");
-    setActividades(room.actividades ?? "");
+    setActividadesTxt(toCSV(room.actividades));
   }, [room]);
 
   const validCapacity = useMemo(() => {
@@ -61,6 +64,7 @@ export default function RoomEditModal({ room, onClose, onSaved }: Props) {
   const handleSave = async () => {
     setSaving(true);
     try {
+      const actividadesArr = parseCSV(actividadesTxt);
       const update: any = {
         name: name.trim() || null,
         room_number: roomNumber.trim() || null,
@@ -69,7 +73,8 @@ export default function RoomEditModal({ room, onClose, onSaved }: Props) {
         equipment: parseCSV(equipmentTxt),
         keywords: parseCSV(keywordsTxt),
         directions: directions.trim() || null,
-        actividades: actividades.trim() || null,
+        // ✅ guardar como array; si no hay nada, manda null
+        actividades: actividadesArr.length ? actividadesArr : null,
         updated_at: new Date().toISOString(),
       };
 
@@ -159,7 +164,7 @@ export default function RoomEditModal({ room, onClose, onSaved }: Props) {
             onChange={(e) => setEquipmentTxt(e.target.value)}
             placeholder='Ej: Mesas, Sillas, Pantalla táctil'
           />
-          <div className="text-[11px] text-muted-foreground">Se guardará como arreglo JSON.</div>
+          <div className="text-[11px] text-muted-foreground">Se guardará como arreglo (text[]).</div>
         </div>
 
         <div className="grid gap-1">
@@ -173,13 +178,14 @@ export default function RoomEditModal({ room, onClose, onSaved }: Props) {
         </div>
 
         <div className="grid gap-1">
-          <label className="text-xs text-muted-foreground">Actividades</label>
+          <label className="text-xs text-muted-foreground">Actividades (separado por coma)</label>
           <textarea
             className="px-3 py-2 rounded border bg-background min-h-[72px]"
-            value={actividades ?? ""}
-            onChange={(e) => setActividades(e.target.value)}
-            placeholder="Actividades relevantes"
+            value={actividadesTxt}
+            onChange={(e) => setActividadesTxt(e.target.value)}
+            placeholder="Procesos institucionales, Levantamiento de procesos, Normativas Institucionales, Acreditación"
           />
+          <div className="text-[11px] text-muted-foreground">Se guardará como arreglo (text[]).</div>
         </div>
       </div>
 
